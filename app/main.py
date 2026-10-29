@@ -484,6 +484,7 @@ def main():
     while True:
         for note in job_lines(only_done=True):  # report finished background jobs
             print(note)
+        hist_len = readline.get_current_history_length()
         try:
             line = input("$ ")
         except EOFError:
@@ -495,7 +496,9 @@ def main():
 
         if not line.strip():
             continue
-        readline.add_history(line)
+        # On a terminal, input() already records the line; only add it ourselves if it didn't.
+        if readline.get_current_history_length() == hist_len:
+            readline.add_history(line)
 
         try:
             stages, bg = parse(tokenize(line))
