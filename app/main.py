@@ -53,8 +53,8 @@ def main():
                 print(f"{path}: No such file or directory") #prints the message if the path is not found
 
 
-        elif shutil.which(command.split()[0]): #if the command is found in the system path, it will execute the command using subprocess.run()
-            subprocess.run(command.split())   # it will execute the command using subprocess.run() and print the output as well as the error message if any
+        elif shutil.which(shlex.split(command)[0]): #if the command is found in the system path, it will execute the command using subprocess.run()
+            subprocess.run(shlex.split(command))   # it will execute the command using subprocess.run() and print the output as well as the error message if any
 
         
         else:
