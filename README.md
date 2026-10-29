@@ -1,34 +1,95 @@
-[![progress-banner](https://backend.codecrafters.io/progress/shell/4ff02cdc-6425-4380-ae4b-32d223f54930)](https://app.codecrafters.io/users/ankitkumartiwari-web?r=2qF)
+# Shell Project — Build Your Own Shell in Python
 
-This is a starting point for Python solutions to the
-["Build Your Own Shell" Challenge](https://app.codecrafters.io/courses/shell/overview).
+[![CodeCrafters Progress](https://backend.codecrafters.io/progress/shell/4ff02cdc-6425-4380-ae4b-32d223f54930)](https://app.codecrafters.io/users/ankitkumartiwari-web?r=2qF)
 
-In this challenge, you'll build your own POSIX compliant shell that's capable of
-interpreting shell commands, running external programs and builtin commands like
-cd, pwd, echo and more. Along the way, you'll learn about shell command parsing,
-REPLs, builtin commands, and more.
+A Unix-like command-line shell implemented in Python as part of the [CodeCrafters Build Your Own Shell challenge](https://app.codecrafters.io/courses/shell/overview).
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+The project explores how command-line shells work internally, including command parsing, built-in commands, external process execution, pipes, and input/output redirection.
 
-# Passing the first stage
+## Features
 
-The entry point for your `shell` implementation is in `app/main.py`. Study and
-uncomment the relevant code, then run the command below to execute the tests on
-our servers:
+- **Interactive REPL:** Continuously accepts and processes user commands.
+- **Built-in Commands:** Implements shell commands such as `echo`, `cd`, `pwd`, `type`, and `exit`.
+- **External Command Execution:** Locates and executes external programs available in the system PATH.
+- **Command Parsing:** Handles command arguments and quoted strings.
+- **Input/Output Redirection:** Supports redirecting command input and output.
+- **Pipes:** Enables communication between commands through pipelines.
 
-```sh
-codecrafters submit
+*Note: Adjust this list to match the features actually implemented and tested in your code.*
+
+## Tech Stack
+
+- Python
+- `subprocess`
+- `shlex`
+- `os`
+- `shutil`
+
+## Project Structure
+
+```text
+shell-project/
+├── app/
+│   └── main.py
+├── your_program.sh
+├── pyproject.toml
+├── README.md
+└── .gitignore
 ```
 
-Time to move on to the next stage!
+## Getting Started
 
-# Stage 2 & beyond
+### Prerequisites
 
-Note: This section is for stages 2 and beyond.
+- Python
+- Git
+- uv
 
-1. Ensure you have `uv` installed locally
-1. Run `./your_program.sh` to run your program, which is implemented in
-   `app/main.py`.
-1. Run `codecrafters submit` to submit your solution to CodeCrafters. Test
-   output will be streamed to your terminal.
+### Clone the Repository
+
+```bash
+git clone https://github.com/ankitkumartiwari-web/shell-project.git
+cd shell-project
+```
+
+### Run the Shell
+
+```bash
+./your_program.sh
+```
+
+On Windows, use the appropriate shell environment configured for the project.
+
+## Example Commands
+
+```bash
+$ pwd
+$ echo Hello World
+$ cd ..
+$ type echo
+$ ls
+$ cat file.txt
+```
+
+## Learning Outcomes
+
+Building this project helped me understand:
+
+- How a shell reads and interprets user commands.
+- How built-in commands differ from external programs.
+- How processes are created and executed.
+- How command arguments and quoted strings are parsed.
+- How pipes and redirection work in command-line environments.
+
+## Acknowledgements
+
+Built as part of the [CodeCrafters Build Your Own Shell challenge](https://codecrafters.io/).
+
+Thanks to the CodeCrafters team for creating an excellent hands-on learning experience.
+
+## Author
+
+**Ankit Kumar Tiwari**
+
+- GitHub: [@ankitkumartiwari-web](https://github.com/ankitkumartiwari-web)
+- Project: [shell-project](https://github.com/ankitkumartiwari-web/shell-project)
