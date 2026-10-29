@@ -6,7 +6,7 @@ def main():
     # sys.stdout.write("$ ")
     print("$ ", end="")
     command = input()
-    print(command)
+    print(f"{command} not found")
 
 
 
