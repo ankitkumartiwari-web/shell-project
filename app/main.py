@@ -34,6 +34,8 @@ def main():
             print(os.getcwd()) #prints the current working directory
 
         elif command.startswith("cd "): #if user types cd, it will change the current working directory
+            if command[:3] in ["~", "cd "]: #if user types cd ~ or cd, it will change the current working directory to home directory
+                os.chdir(os.path.expanduser("~")) #changes the current working directory to home directory
             path = command[3:] # Extract the path after "cd "
             try:
                 os.chdir(path) #changes the current working directory
