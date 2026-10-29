@@ -1,5 +1,5 @@
 import sys
-
+import shutil
 
 def main():
     # TODO: Uncomment the code below to pass the first stage
@@ -18,9 +18,9 @@ def main():
             if cmd in ["echo", "exit", "type"]:
                 print(f"{cmd} is a shell builtin") #prints the message
 
-            elif cmd in ["grep"]:
-                print(f"{cmd} is /usr/bin/grep") #prints the message
-
+            elif path := shutil.which(cmd): # shutil.which() is used to find the path of the command
+                print(f"{cmd} is {path}") 
+            
             else:
                 print(f"{cmd}: not found") #prints the message
         
