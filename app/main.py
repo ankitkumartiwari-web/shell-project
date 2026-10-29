@@ -6,7 +6,7 @@ def main():
     # sys.stdout.write("$ ")
     while True:
 
-        print("$ ", end="") # It prints $ sign to indicate the shell prompt
+        print("$", end="") # It prints $ sign to indicate the shell prompt
         command = input() # takes str input from user
         
         if command == "exit": #if user types exit, the program will terminate
@@ -14,7 +14,7 @@ def main():
 
         elif command.startswith("type"): #if user types type, echo or exit, it will print the message
             cmd = command[5:] # Extract the command after "type "
-            
+
             if cmd in ["echo", "exit", "type"]:
                 print(f"{cmd} is a shell builtin") #prints the message
         
