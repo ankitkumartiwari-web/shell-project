@@ -1,5 +1,7 @@
+import os
 import sys
 import shutil
+import subprocess
 
 def main():
     # TODO: Uncomment the code below to pass the first stage
@@ -27,7 +29,9 @@ def main():
         elif command.startswith("echo "): #if user types echo, it will print the message
             message = command[5:] # Extract the message after "echo "
             print(message) #prints the message
-            
+
+        elif shutil.which(command.split()[0]):
+            subprocess.run(command.split())   
         
         else:
             print(f"{command}: command not found") #else it will print command not found message
