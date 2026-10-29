@@ -1,6 +1,14 @@
 import os
 import re
 import sys
+
+if os.name == "nt":
+    sys.exit(
+        "This shell uses os.fork() and readline, which Windows doesn't have.\n"
+        "Run it in WSL (wsl --install) or Linux, or just push to CodeCrafters,\n"
+        "whose tests run on Linux."
+    )
+
 import shutil
 import shlex
 import subprocess
