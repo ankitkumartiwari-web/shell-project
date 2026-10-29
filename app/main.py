@@ -4,6 +4,8 @@ import shutil
 import subprocess
 import shlex
 
+from click import command
+
 def main():
     # TODO: Uncomment the code below to pass the first stage
     # sys.stdout.write("$ ")
@@ -31,9 +33,9 @@ def main():
                 print(f"{cmd}: not found") #prints the message
 
         
-        elif command.startswith("echo "): #if user types echo, it will print the message
-            message = command[5:] # Extract the message after "echo "
-            print(message) #prints the message
+        elif command.startswith("echo "):
+            message = shlex.split(command)[1:]
+            print(" ".join(message))
 
 
         elif command == "pwd": #if user types pwd, it will print the current working directory
@@ -52,12 +54,8 @@ def main():
                 print(f"{path}: No such file or directory") #prints the message if the path is not found
 
 
-        elif shutil.which(command.split()[0]):
-            subprocess.run(command.split())   
-
-        elif command.startswith("echo "):
-            message = shlex.split(command)[1:]
-            print(" ".join(message))
+        elif shutil.which(command.split()[0]): #if the command is found in the system path, it will execute the command using subprocess.run()
+            subprocess.run(command.split())   # it will execute the command using subprocess.run() and print the output as well as the error message if any
 
         
         else:
