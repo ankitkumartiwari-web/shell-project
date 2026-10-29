@@ -6,7 +6,7 @@ def main():
     # sys.stdout.write("$ ")
     while True:
 
-        print("$", end="") # It prints $ sign to indicate the shell prompt
+        print("$ ", end="") # It prints $ sign to indicate the shell prompt
         command = input() # takes str input from user
         
         if command == "exit": #if user types exit, the program will terminate
