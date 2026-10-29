@@ -2,6 +2,7 @@ import os
 import sys
 import shutil
 import subprocess
+import shlex
 
 def main():
     # TODO: Uncomment the code below to pass the first stage
