@@ -30,7 +30,10 @@ def main():
             message = command[5:] # Extract the message after "echo "
             print(message) #prints the message
 
+        elif command == "pwd": #if user types pwd, it will print the current working directory
+            print(os.getcwd()) #prints the current working directory
 
+            
         elif shutil.which(command.split()[0]):
             subprocess.run(command.split())   
         
