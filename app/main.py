@@ -1,10 +1,13 @@
 import os
 import sys
 import shutil
+import shlex
+import subprocess
 import readline
 from contextlib import contextmanager
 
-BUILTINS = {"exit", "echo", "type", "pwd", "cd", "history"}
+BUILTINS = {"exit", "echo", "type", "pwd", "cd", "history", "complete"}
+completions = {}  # command name -> completer script (set via `complete -C`)
 last_appended = 0  # index of last history entry written by `history -a`
 
 
@@ -191,9 +194,33 @@ def do_history(args):
     return 0
 
 
+def do_complete(args):
+    status = 0
+    if len(args) >= 2 and args[0] == "-p":
+        for name in args[1:]:
+            if name in completions:
+                print(f"complete -C '{completions[name]}' {name}")
+            else:
+                print(f"complete: {name}: no completion specification")
+                status = 1
+    elif len(args) >= 3 and args[0] == "-C":
+        for name in args[2:]:
+            completions[name] = args[1]
+    elif len(args) >= 2 and args[0] == "-r":
+        for name in args[1:]:
+            if completions.pop(name, None) is None:
+                print(f"complete: {name}: no completion specification")
+                status = 1
+    else:
+        print("complete: usage: complete [-p name] [-C command name] [-r name]", file=sys.stderr)
+        status = 2
+    return status
+
+
 BUILTIN_FUNCS = {
     "exit": do_exit, "echo": do_echo, "pwd": do_pwd,
     "cd": do_cd, "type": do_type, "history": do_history,
+    "complete": do_complete,
 }
 
 
@@ -316,11 +343,31 @@ def all_commands():
     return names
 
 
-def completer(text, state):
+def programmable_matches(cmd, text, begin):
+    """Run a `complete -C` script: COMP_LINE/COMP_POINT in env, args = cmd, word, previous word."""
+    line = readline.get_line_buffer()
+    point = len(line)
+    before = line[:begin].split()
+    prev = before[-1] if before else ""
+    env = dict(os.environ, COMP_LINE=line, COMP_POINT=str(point))
+    try:
+        result = subprocess.run(
+            shlex.split(completions[cmd]) + [cmd, text, prev],
+            env=env, capture_output=True, text=True,
+        )
+    except (OSError, ValueError):
+        return []
+    return sorted(l for l in result.stdout.splitlines() if l)
+
+
+def compute_matches(text):
     line = readline.get_line_buffer()
     begin = readline.get_begidx()
-    if line[:begin].strip() == "":
+    words = line[:begin].split()
+    if not words:
         matches = sorted(c for c in all_commands() if c.startswith(text))
+    elif words[0] in completions:
+        matches = programmable_matches(words[0], text, begin)
     else:
         dirname, base = os.path.split(text)
         try:
@@ -335,7 +382,17 @@ def completer(text, state):
     # Exactly one match: finish it with a space (directories end in "/" instead).
     if len(matches) == 1 and not matches[0].endswith("/"):
         matches[0] += " "
-    return matches[state] if state < len(matches) else None
+    return matches
+
+
+_current_matches = []
+
+
+def completer(text, state):
+    global _current_matches
+    if state == 0:  # compute once per Tab press, not once per candidate
+        _current_matches = compute_matches(text)
+    return _current_matches[state] if state < len(_current_matches) else None
 
 
 def setup_readline():
