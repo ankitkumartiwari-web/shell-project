@@ -6,7 +6,8 @@ import subprocess
 import readline
 from contextlib import contextmanager
 
-BUILTINS = {"exit", "echo", "type", "pwd", "cd", "history", "complete"}
+BUILTINS = {"exit", "echo", "type", "pwd", "cd", "history", "complete", "jobs"}
+jobs = []  # background jobs: {"id", "pids", "cmd", "done"}
 completions = {}  # command name -> completer script (set via `complete -C`)
 last_appended = 0  # index of last history entry written by `history -a`
 
@@ -60,6 +61,10 @@ def tokenize(line):
             flush()
             tokens.append(("op", "|"))
             i += 1
+        elif c == "&":
+            flush()
+            tokens.append(("op", "&"))
+            i += 1
         elif c == "<":
             flush()
             tokens.append(("op", "<"))
@@ -91,6 +96,7 @@ def tokenize(line):
 # --------------------------------------------------------------------------
 def parse(tokens):
     stages = [{"args": [], "redirs": []}]
+    background = False
     i = 0
     while i < len(tokens):
         kind, val = tokens[i]
@@ -100,6 +106,10 @@ def parse(tokens):
             if not stages[-1]["args"] and not stages[-1]["redirs"]:
                 raise ValueError("syntax error near unexpected token `|'")
             stages.append({"args": [], "redirs": []})
+        elif val == "&":
+            if i != len(tokens) - 1:
+                raise ValueError("syntax error near unexpected token `&'")
+            background = True
         else:  # redirection operator
             if i + 1 >= len(tokens) or tokens[i + 1][0] != "word":
                 raise ValueError("syntax error: missing redirection target")
@@ -114,7 +124,7 @@ def parse(tokens):
         i += 1
     if not stages[-1]["args"] and not stages[-1]["redirs"]:
         raise ValueError("syntax error: unexpected end of input")
-    return stages
+    return stages, background
 
 
 # --------------------------------------------------------------------------
@@ -194,6 +204,40 @@ def do_history(args):
     return 0
 
 
+def update_jobs():
+    """Non-blocking check of which background processes have finished."""
+    for job in jobs:
+        for pid in job["pids"]:
+            if pid in job["done"]:
+                continue
+            try:
+                if os.waitpid(pid, os.WNOHANG)[0] == pid:
+                    job["done"].add(pid)
+            except ChildProcessError:
+                job["done"].add(pid)
+
+
+def job_lines(only_done):
+    """Format job lines (markers are based on the full job list); drop finished jobs."""
+    update_jobs()
+    lines = []
+    for idx, job in enumerate(jobs):
+        marker = "+" if idx == len(jobs) - 1 else "-" if idx == len(jobs) - 2 else " "
+        finished = len(job["done"]) == len(job["pids"])
+        if only_done and not finished:
+            continue
+        status, cmd = ("Done", job["cmd"]) if finished else ("Running", job["cmd"] + " &")
+        lines.append(f"[{job['id']}]{marker}  {status:<24}{cmd}")
+    jobs[:] = [j for j in jobs if len(j["done"]) != len(j["pids"])]  # reap finished
+    return lines
+
+
+def do_jobs(args):
+    for line in job_lines(only_done=False):
+        print(line)
+    return 0
+
+
 def do_complete(args):
     status = 0
     if len(args) >= 2 and args[0] == "-p":
@@ -220,7 +264,7 @@ def do_complete(args):
 BUILTIN_FUNCS = {
     "exit": do_exit, "echo": do_echo, "pwd": do_pwd,
     "cd": do_cd, "type": do_type, "history": do_history,
-    "complete": do_complete,
+    "complete": do_complete, "jobs": do_jobs,
 }
 
 
@@ -279,9 +323,10 @@ def run_stage(args):
         return 126
 
 
-def execute(stages):
+def execute(stages, background=False, cmd=""):
     # A lone builtin runs in the shell process so cd/exit/history affect the shell.
-    if len(stages) == 1 and stages[0]["args"] and stages[0]["args"][0] in BUILTIN_FUNCS:
+    if (not background and len(stages) == 1 and stages[0]["args"]
+            and stages[0]["args"][0] in BUILTIN_FUNCS):
         st = stages[0]
         with redirected(st["redirs"]) as ok:
             if ok:
@@ -299,6 +344,12 @@ def execute(stages):
         if pid == 0:  # child
             code = 1
             try:
+                if background:
+                    os.setpgid(0, 0)
+                    if i == 0 and not any(r[0] == 0 for r in st["redirs"]):
+                        nul = os.open(os.devnull, os.O_RDONLY)
+                        os.dup2(nul, 0)
+                        os.close(nul)
                 if i > 0:
                     os.dup2(pipes[i - 1][0], 0)
                 if i < n - 1:
@@ -323,6 +374,11 @@ def execute(stages):
     for r, w in pipes:
         os.close(r)
         os.close(w)
+    if background:
+        job_id = max((j["id"] for j in jobs), default=0) + 1
+        jobs.append({"id": job_id, "pids": pids, "cmd": cmd, "done": set()})
+        print(f"[{job_id}] {pids[-1]}")
+        return
     for pid in pids:
         os.waitpid(pid, 0)
 
@@ -426,6 +482,8 @@ def main():
     last_appended = readline.get_current_history_length()
 
     while True:
+        for note in job_lines(only_done=True):  # report finished background jobs
+            print(note)
         try:
             line = input("$ ")
         except EOFError:
@@ -440,13 +498,13 @@ def main():
         readline.add_history(line)
 
         try:
-            stages = parse(tokenize(line))
+            stages, bg = parse(tokenize(line))
         except ValueError as e:
             print(f"shell: {e}", file=sys.stderr)
             continue
 
         try:
-            execute(stages)
+            execute(stages, bg, line.strip()[:-1].rstrip() if bg else line.strip())
         except SystemExit as e:
             save_history()
             sys.exit(e.code)
