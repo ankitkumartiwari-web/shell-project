@@ -12,9 +12,12 @@ def main():
         if command == "exit": #if user types exit, the program will terminate
             break
 
+        elif command == "echo": #if user types echo, it will print the message
+            message = input() #takes str input from user
+            print(message) #prints the message
         
-        print(f"{command}: command not found") #else it will print command not found message
-        
+        else:
+            print(f"{command}: command not found") #else it will print command not found message
 
 
 if __name__ == "__main__":
