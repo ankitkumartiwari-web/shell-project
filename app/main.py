@@ -13,7 +13,7 @@ def main():
             break
 
         elif command[:5] in ["type", "echo", "exit"]:
-            print(f"{command[5:]} is a shell builtin")
+            print(f"{command[:5]} is a shell builtin")
         
         elif command.startswith("echo "): #if user types echo, it will print the message
             message = command[5:] # Extract the message after "echo "
