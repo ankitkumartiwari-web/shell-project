@@ -4,7 +4,6 @@ import shutil
 import subprocess
 import shlex
 
-from click import command
 
 def main():
     # TODO: Uncomment the code below to pass the first stage
