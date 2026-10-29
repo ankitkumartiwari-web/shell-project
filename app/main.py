@@ -12,8 +12,8 @@ def main():
         if command == "exit": #if user types exit, the program will terminate
             break
 
-        elif command == "echo": #if user types echo, it will print the message
-            message = input() #takes str input from user
+        elif command.startswith("echo "): #if user types echo, it will print the message
+            message = command[5:] # Extract the message after "echo "
             print(message) #prints the message
         
         else:
