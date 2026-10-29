@@ -5,14 +5,15 @@ def main():
     # TODO: Uncomment the code below to pass the first stage
     # sys.stdout.write("$ ")
     while True:
-        print("$ ", end="")
-        command = input()
+
+        print("$ ", end="") # It prints $ sign to indicate the shell prompt
+        command = input() # takes str input from user
         
-        if command == "exit":
+        if command == "exit": #if user types exit, the program will terminate
             break
 
         
-        print(f"{command}: command not found")
+        print(f"{command}: command not found") #else it will print command not found message
         
 
 
