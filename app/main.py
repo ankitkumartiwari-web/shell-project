@@ -55,6 +55,10 @@ def main():
         elif shutil.which(command.split()[0]):
             subprocess.run(command.split())   
 
+        elif command.startswith("echo "):
+            message = shlex.split(command)[1:]
+            print(" ".join(message))
+
         
         else:
             print(f"{command}: command not found") #else it will print command not found message
