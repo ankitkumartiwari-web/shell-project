@@ -1,69 +1,398 @@
-def parse_command(text):
-    lexer = shlex.shlex(text, posix=True, punctuation_chars="<>")
-    lexer.whitespace_split = True
-    lexer.commenters = ""
-    tokens = list(lexer)
+import os
+import sys
+import shutil
+import readline
+from contextlib import contextmanager
 
-    args = []
-    stdin_file = None
-    stdout_file = None
-    stderr_file = None
-    append_stdout = False
-    append_stderr = False
+BUILTINS = {"exit", "echo", "type", "pwd", "cd", "history"}
+last_appended = 0  # index of last history entry written by `history -a`
 
+
+# --------------------------------------------------------------------------
+# Tokenizer: quotes, backslashes, and the operators  |  <  >  >>  1>  2>  2>>
+# --------------------------------------------------------------------------
+def tokenize(line):
+    tokens, cur = [], []
+    quoted = False  # current token contained any quoting
+    in_word = False
+    i, n = 0, len(line)
+
+    def flush():
+        nonlocal cur, quoted, in_word
+        if in_word:
+            tokens.append(("word", "".join(cur)))
+        cur, quoted, in_word = [], False, False
+
+    while i < n:
+        c = line[i]
+        if c == "\\":  # backslash outside quotes: keep next char literally
+            if i + 1 < n:
+                cur.append(line[i + 1])
+                in_word = quoted = True
+            i += 2
+        elif c == "'":  # single quotes: everything literal
+            j = line.find("'", i + 1)
+            if j == -1:
+                raise ValueError("unterminated single quote")
+            cur.append(line[i + 1:j])
+            in_word = quoted = True
+            i = j + 1
+        elif c == '"':  # double quotes: backslash escapes only \ " $ `
+            i += 1
+            while i < n and line[i] != '"':
+                if line[i] == "\\" and i + 1 < n and line[i + 1] in '\\"$`':
+                    cur.append(line[i + 1])
+                    i += 2
+                else:
+                    cur.append(line[i])
+                    i += 1
+            if i >= n:
+                raise ValueError("unterminated double quote")
+            i += 1
+            in_word = quoted = True
+        elif c.isspace():
+            flush()
+            i += 1
+        elif c == "|":
+            flush()
+            tokens.append(("op", "|"))
+            i += 1
+        elif c == "<":
+            flush()
+            tokens.append(("op", "<"))
+            i += 1
+        elif c == ">":
+            fd = 1
+            # "1>" / "2>" : a lone unquoted digit directly before '>'
+            if in_word and not quoted and "".join(cur) in ("1", "2"):
+                fd = int("".join(cur))
+                cur, in_word = [], False
+            else:
+                flush()
+            if i + 1 < n and line[i + 1] == ">":
+                tokens.append(("op", (fd, ">>")))
+                i += 2
+            else:
+                tokens.append(("op", (fd, ">")))
+                i += 1
+        else:
+            cur.append(c)
+            in_word = True
+            i += 1
+    flush()
+    return tokens
+
+
+# --------------------------------------------------------------------------
+# Parser: tokens -> list of stages {"args": [...], "redirs": [(fd, path, flags)]}
+# --------------------------------------------------------------------------
+def parse(tokens):
+    stages = [{"args": [], "redirs": []}]
     i = 0
     while i < len(tokens):
-        token = tokens[i]
-
-        # Handle input and output redirection
-        if token in ("<", ">", ">>", "1>", "1>>", "2>", "2>>"):
-            if i + 1 >= len(tokens):
-                raise ValueError(f"Missing filename after {token}")
-
-            filename = tokens[i + 1]
-
-            if token == "<":
-                stdin_file = filename
-            elif token in (">", "1>"):
-                stdout_file = filename
-            elif token in (">>", "1>>"):
-                stdout_file = filename
-                append_stdout = True
-            elif token == "2>":
-                stderr_file = filename
-            elif token == "2>>":
-                stderr_file = filename
-                append_stderr = True
-
-            i += 2
-
-        # Handle tokenized forms such as 1 followed by >
-        elif token in ("1", "2") and i + 1 < len(tokens) and tokens[i + 1] in (">", ">>"):
-            operator = token + tokens[i + 1]
-
-            if i + 2 >= len(tokens):
-                raise ValueError(f"Missing filename after {operator}")
-
-            filename = tokens[i + 2]
-
-            if token == "1":
-                stdout_file = filename
-                append_stdout = tokens[i + 1] == ">>"
+        kind, val = tokens[i]
+        if kind == "word":
+            stages[-1]["args"].append(val)
+        elif val == "|":
+            if not stages[-1]["args"] and not stages[-1]["redirs"]:
+                raise ValueError("syntax error near unexpected token `|'")
+            stages.append({"args": [], "redirs": []})
+        else:  # redirection operator
+            if i + 1 >= len(tokens) or tokens[i + 1][0] != "word":
+                raise ValueError("syntax error: missing redirection target")
+            path = tokens[i + 1][1]
+            if val == "<":
+                stages[-1]["redirs"].append((0, path, os.O_RDONLY))
             else:
-                stderr_file = filename
-                append_stderr = tokens[i + 1] == ">>"
-
-            i += 3
-
-        else:
-            args.append(token)
+                fd, mode = val
+                flags = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if mode == ">>" else os.O_TRUNC)
+                stages[-1]["redirs"].append((fd, path, flags))
             i += 1
+        i += 1
+    if not stages[-1]["args"] and not stages[-1]["redirs"]:
+        raise ValueError("syntax error: unexpected end of input")
+    return stages
 
-    return (
-        args,
-        stdin_file,
-        stdout_file,
-        stderr_file,
-        append_stdout,
-        append_stderr,
-    )
+
+# --------------------------------------------------------------------------
+# Builtins
+# --------------------------------------------------------------------------
+def do_exit(args):
+    try:
+        code = int(args[0]) if args else 0
+    except ValueError:
+        code = 2
+    raise SystemExit(code)
+
+
+def do_echo(args):
+    print(" ".join(args))
+    return 0
+
+
+def do_pwd(args):
+    print(os.getcwd())
+    return 0
+
+
+def do_cd(args):
+    target = args[0] if args else "~"
+    try:
+        os.chdir(os.path.expanduser(target))
+        return 0
+    except FileNotFoundError:
+        print(f"cd: {target}: No such file or directory", file=sys.stderr)
+    except NotADirectoryError:
+        print(f"cd: {target}: Not a directory", file=sys.stderr)
+    except PermissionError:
+        print(f"cd: {target}: Permission denied", file=sys.stderr)
+    return 1
+
+
+def do_type(args):
+    status = 0
+    for name in args:
+        if name in BUILTINS:
+            print(f"{name} is a shell builtin")
+        elif path := shutil.which(name):
+            print(f"{name} is {path}")
+        else:
+            print(f"{name}: not found")
+            status = 1
+    return status
+
+
+def do_history(args):
+    global last_appended
+    total = readline.get_current_history_length()
+    if args and args[0] in ("-r", "-w", "-a") and len(args) > 1:
+        flag, path = args[0], args[1]
+        try:
+            if flag == "-r":
+                readline.read_history_file(path)
+            elif flag == "-w":
+                readline.write_history_file(path)
+            else:
+                readline.append_history_file(total - last_appended, path)
+                last_appended = total
+        except OSError as e:
+            print(f"history: {path}: {e.strerror}", file=sys.stderr)
+            return 1
+        return 0
+    start = 1
+    if args:
+        try:
+            start = max(1, total - int(args[0]) + 1)
+        except ValueError:
+            print(f"history: {args[0]}: numeric argument required", file=sys.stderr)
+            return 1
+    for idx in range(start, total + 1):
+        print(f"{idx:5d}  {readline.get_history_item(idx)}")
+    return 0
+
+
+BUILTIN_FUNCS = {
+    "exit": do_exit, "echo": do_echo, "pwd": do_pwd,
+    "cd": do_cd, "type": do_type, "history": do_history,
+}
+
+
+# --------------------------------------------------------------------------
+# Redirection helpers
+# --------------------------------------------------------------------------
+def apply_redirs(redirs):
+    sys.stdout.flush()
+    sys.stderr.flush()
+    for fd, path, flags in redirs:
+        try:
+            new_fd = os.open(path, flags, 0o644)
+        except OSError as e:
+            print(f"{path}: {e.strerror}", file=sys.stderr)
+            return False
+        os.dup2(new_fd, fd)
+        os.close(new_fd)
+    return True
+
+
+@contextmanager
+def redirected(redirs):
+    """Temporarily apply redirections in the shell process (for single builtins)."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    saved = {fd: os.dup(fd) for fd in (0, 1, 2)}
+    try:
+        yield apply_redirs(redirs)
+    finally:
+        sys.stdout.flush()
+        sys.stderr.flush()
+        for fd, s in saved.items():
+            os.dup2(s, fd)
+            os.close(s)
+
+
+# --------------------------------------------------------------------------
+# Execution
+# --------------------------------------------------------------------------
+def run_stage(args):
+    """Run one command inside a forked child; returns an exit status."""
+    if not args:
+        return 0
+    if args[0] in BUILTIN_FUNCS:
+        return BUILTIN_FUNCS[args[0]](args[1:])
+    try:
+        os.execvp(args[0], args)
+    except FileNotFoundError:
+        print(f"{args[0]}: command not found", file=sys.stderr)
+        return 127
+    except PermissionError:
+        print(f"{args[0]}: Permission denied", file=sys.stderr)
+        return 126
+    except OSError as e:
+        print(f"{args[0]}: {e.strerror}", file=sys.stderr)
+        return 126
+
+
+def execute(stages):
+    # A lone builtin runs in the shell process so cd/exit/history affect the shell.
+    if len(stages) == 1 and stages[0]["args"] and stages[0]["args"][0] in BUILTIN_FUNCS:
+        st = stages[0]
+        with redirected(st["redirs"]) as ok:
+            if ok:
+                BUILTIN_FUNCS[st["args"][0]](st["args"][1:])
+        return
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    n = len(stages)
+    pipes = [os.pipe() for _ in range(n - 1)]
+    pids = []
+
+    for i, st in enumerate(stages):
+        pid = os.fork()
+        if pid == 0:  # child
+            code = 1
+            try:
+                if i > 0:
+                    os.dup2(pipes[i - 1][0], 0)
+                if i < n - 1:
+                    os.dup2(pipes[i][1], 1)
+                for r, w in pipes:
+                    os.close(r)
+                    os.close(w)
+                if apply_redirs(st["redirs"]):  # redirections override pipes
+                    code = run_stage(st["args"])
+            except SystemExit as e:
+                code = e.code if isinstance(e.code, int) else 0
+            except BaseException:
+                code = 1
+            finally:
+                try:
+                    sys.stdout.flush()
+                    sys.stderr.flush()
+                finally:
+                    os._exit(code)
+        pids.append(pid)
+
+    for r, w in pipes:
+        os.close(r)
+        os.close(w)
+    for pid in pids:
+        os.waitpid(pid, 0)
+
+
+# --------------------------------------------------------------------------
+# Tab completion (commands for the first word, files afterwards)
+# --------------------------------------------------------------------------
+def all_commands():
+    names = set(BUILTINS)
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        try:
+            for f in os.listdir(d):
+                full = os.path.join(d, f)
+                if os.path.isfile(full) and os.access(full, os.X_OK):
+                    names.add(f)
+        except OSError:
+            continue
+    return names
+
+
+def completer(text, state):
+    line = readline.get_line_buffer()
+    begin = readline.get_begidx()
+    if line[:begin].strip() == "":
+        matches = sorted(c for c in all_commands() if c.startswith(text))
+    else:
+        dirname, base = os.path.split(text)
+        try:
+            entries = os.listdir(dirname or ".")
+        except OSError:
+            entries = []
+        matches = []
+        for f in sorted(entries):
+            if f.startswith(base):
+                p = os.path.join(dirname, f)
+                matches.append(p + "/" if os.path.isdir(p) else p)
+    return matches[state] if state < len(matches) else None
+
+
+def setup_readline():
+    readline.set_completer_delims(" \t\n")
+    readline.set_completer(completer)
+    if "libedit" in (readline.__doc__ or ""):
+        readline.parse_and_bind("bind ^I rl_complete")
+    else:
+        readline.parse_and_bind("tab: complete")
+    histfile = os.environ.get("HISTFILE")
+    if histfile and os.path.exists(histfile):
+        try:
+            readline.read_history_file(histfile)
+        except OSError:
+            pass
+
+
+def save_history():
+    histfile = os.environ.get("HISTFILE")
+    if histfile:
+        try:
+            readline.write_history_file(histfile)
+        except OSError:
+            pass
+
+
+# --------------------------------------------------------------------------
+def main():
+    global last_appended
+    setup_readline()
+    last_appended = readline.get_current_history_length()
+
+    while True:
+        try:
+            line = input("$ ")
+        except EOFError:
+            print()
+            break
+        except KeyboardInterrupt:
+            print()
+            continue
+
+        if not line.strip():
+            continue
+        readline.add_history(line)
+
+        try:
+            stages = parse(tokenize(line))
+        except ValueError as e:
+            print(f"shell: {e}", file=sys.stderr)
+            continue
+
+        try:
+            execute(stages)
+        except SystemExit as e:
+            save_history()
+            sys.exit(e.code)
+
+    save_history()
+
+
+if __name__ == "__main__":
+    main()
