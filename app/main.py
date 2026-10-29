@@ -17,6 +17,10 @@ def main():
 
             if cmd in ["echo", "exit", "type"]:
                 print(f"{cmd} is a shell builtin") #prints the message
+
+            elif cmd in ["grep"]:
+                print(f"{cmd} is /usr/bin/grep") #prints the message
+
             else:
                 print(f"{cmd}: not found") #prints the message
         
