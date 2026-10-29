@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import shutil
 import shlex
@@ -6,10 +7,33 @@ import subprocess
 import readline
 from contextlib import contextmanager
 
-BUILTINS = {"exit", "echo", "type", "pwd", "cd", "history", "complete", "jobs"}
+BUILTINS = {"exit", "echo", "type", "pwd", "cd", "history", "complete", "jobs", "declare"}
+variables = {}  # shell variables (set by `declare` or NAME=value)
+NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 jobs = []  # background jobs: {"id", "pids", "cmd", "done"}
 completions = {}  # command name -> completer script (set via `complete -C`)
 last_appended = 0  # index of last history entry written by `history -a`
+
+
+def get_var(name):
+    return variables[name] if name in variables else os.environ.get(name, "")
+
+
+def set_var(name, value):
+    variables[name] = value
+    if name in os.environ:  # already exported: keep the environment in sync
+        os.environ[name] = value
+
+
+def read_var(line, i):
+    """line[i] == '$'. Return (value, next_index) for $NAME / ${NAME}, else None."""
+    if line[i + 1:i + 2] == "{":
+        j = line.find("}", i + 2)
+        if j != -1 and NAME_RE.fullmatch(line[i + 2:j]):
+            return get_var(line[i + 2:j]), j + 1
+        return None
+    m = NAME_RE.match(line, i + 1)
+    return (get_var(m.group()), m.end()) if m else None
 
 
 # --------------------------------------------------------------------------
@@ -47,6 +71,9 @@ def tokenize(line):
                 if line[i] == "\\" and i + 1 < n and line[i + 1] in '\\"$`':
                     cur.append(line[i + 1])
                     i += 2
+                elif line[i] == "$" and (r := read_var(line, i)) is not None:
+                    cur.append(r[0])
+                    i = r[1]
                 else:
                     cur.append(line[i])
                     i += 1
@@ -54,6 +81,16 @@ def tokenize(line):
                 raise ValueError("unterminated double quote")
             i += 1
             in_word = quoted = True
+        elif c == "$" and (r := read_var(line, i)) is not None:
+            for part in re.split(r"(\s+)", r[0]):
+                if not part:
+                    continue
+                if part.isspace():
+                    flush()
+                else:
+                    cur.append(part)
+                    in_word = True
+            i = r[1]
         elif c.isspace():
             flush()
             i += 1
@@ -204,6 +241,50 @@ def do_history(args):
     return 0
 
 
+def do_declare(args):
+    status, show, export, names = 0, False, False, []
+    for a in args:
+        if a.startswith("-") and len(a) > 1 and not names:
+            for ch in a[1:]:
+                if ch == "p":
+                    show = True
+                elif ch == "x":
+                    export = True
+                else:
+                    print(f"declare: -{ch}: invalid option", file=sys.stderr)
+                    return 2
+        else:
+            names.append(a)
+
+    if show:
+        for t in names or sorted(variables):
+            name = t.split("=")[0]
+            if name in variables or name in os.environ:
+                flag = "-x" if name in os.environ else "--"
+                value = get_var(name)
+                for ch in '\\"$`':
+                    value = value.replace(ch, "\\" + ch)
+                print(f'declare {flag} {name}="{value}"')
+            else:
+                print(f"declare: {name}: not found", file=sys.stderr)
+                status = 1
+        return status
+
+    for item in names:
+        name, eq, value = item.partition("=")
+        if not NAME_RE.fullmatch(name):
+            print(f"declare: `{item}': not a valid identifier", file=sys.stderr)
+            status = 1
+            continue
+        if eq:
+            set_var(name, value)
+        elif name not in variables:
+            variables[name] = ""
+        if export:
+            os.environ[name] = variables[name]
+    return status
+
+
 def update_jobs():
     """Non-blocking check of which background processes have finished."""
     for job in jobs:
@@ -264,7 +345,7 @@ def do_complete(args):
 BUILTIN_FUNCS = {
     "exit": do_exit, "echo": do_echo, "pwd": do_pwd,
     "cd": do_cd, "type": do_type, "history": do_history,
-    "complete": do_complete, "jobs": do_jobs,
+    "complete": do_complete, "jobs": do_jobs, "declare": do_declare,
 }
 
 
@@ -504,6 +585,12 @@ def main():
             stages, bg = parse(tokenize(line))
         except ValueError as e:
             print(f"shell: {e}", file=sys.stderr)
+            continue
+
+        if (len(stages) == 1 and not bg and stages[0]["args"]
+                and all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", a, re.S) for a in stages[0]["args"])):
+            for a in stages[0]["args"]:
+                set_var(*a.split("=", 1))
             continue
 
         try:
