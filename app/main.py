@@ -8,11 +8,14 @@ def main():
     # sys.stdout.write("$ ")
     while True:
 
+
         print("$ ", end="") # It prints $ sign to indicate the shell prompt
         command = input() # takes str input from user
+
         
         if command == "exit": #if user types exit, the program will terminate
             break
+
 
         elif command.startswith("type"): #if user types type, echo or exit, it will print the message
             cmd = command[5:] # Extract the command after "type "
@@ -25,25 +28,32 @@ def main():
             
             else:
                 print(f"{cmd}: not found") #prints the message
+
         
         elif command.startswith("echo "): #if user types echo, it will print the message
             message = command[5:] # Extract the message after "echo "
             print(message) #prints the message
 
+
         elif command == "pwd": #if user types pwd, it will print the current working directory
             print(os.getcwd()) #prints the current working directory
 
+
         elif command.startswith("cd "): #if user types cd, it will change the current working directory
-            if command[:3] in ["~", "cd "]: #if user types cd ~ or cd, it will change the current working directory to home directory
-                os.chdir(os.path.expanduser("~")) #changes the current working directory to home directory
             path = command[3:] # Extract the path after "cd "
+            
+            if path == "~":
+                path = os.path.expanduser("~")
+
             try:
                 os.chdir(path) #changes the current working directory
             except FileNotFoundError:
                 print(f"{path}: No such file or directory") #prints the message if the path is not found
 
+
         elif shutil.which(command.split()[0]):
             subprocess.run(command.split())   
+
         
         else:
             print(f"{command}: command not found") #else it will print command not found message
