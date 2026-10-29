@@ -12,7 +12,7 @@ def main():
         if command == "exit": #if user types exit, the program will terminate
             break
 
-        elif command[:5] in ["type", "echo", "exit"]:
+        elif command.startswith(("type", "echo", "exit")): #if user types type, echo or exit, it will print the message
             print(f"{command[:5]} is a shell builtin")
         
         elif command.startswith("echo "): #if user types echo, it will print the message
