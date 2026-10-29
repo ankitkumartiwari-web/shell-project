@@ -332,6 +332,9 @@ def completer(text, state):
             if f.startswith(base):
                 p = os.path.join(dirname, f)
                 matches.append(p + "/" if os.path.isdir(p) else p)
+    # Exactly one match: finish it with a space (directories end in "/" instead).
+    if len(matches) == 1 and not matches[0].endswith("/"):
+        matches[0] += " "
     return matches[state] if state < len(matches) else None
 
 
