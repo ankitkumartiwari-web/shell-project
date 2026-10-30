@@ -17,6 +17,16 @@ The project explores how command-line shells work internally, including command 
 
 *Note: Adjust this list to match the features actually implemented and tested in your code.*
 
+## Demo
+
+### Shell Execution and Built-in Commands
+
+![Shell Execution](assets/shell-demo-1.png)
+
+### Pipes and Output Redirection
+
+![Pipes and Redirection](assets/shell-demo-2.png)
+
 ## Tech Stack
 
 - Python
